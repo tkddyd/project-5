@@ -91,9 +91,14 @@ class MainActivity : ComponentActivity() {
 
                             recResult?.let { rec ->
                                 val regionHint = uiState.filter.region.ifBlank { null }
-                                ResultScreen(rec, regionHint)
+                                ResultScreen(
+                                    rec = rec,
+                                    regionHint = regionHint,
+                                    onBack = {
+                                        navController.popBackStack()
+                                    }
+                                )
                             } ?: run {
-                                // 추천 결과가 없을 때는 검색 화면으로 유도
                                 LaunchedEffect(Unit) {
                                     navController.navigate(Screen.Search.route) {
                                         popUpTo(Screen.Search.route) { inclusive = true }

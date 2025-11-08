@@ -50,7 +50,8 @@ import java.net.URLEncoder
 @Composable
 fun ResultScreen(
     rec: RecommendationResult,
-    regionHint: String? = null   // ✅ 사용자가 입력했던 지역 (예: "광주 상무동")
+    regionHint: String? = null,   // ✅ 사용자가 입력했던 지역 (예: "광주 상무동")
+    onBack: () -> Unit            // ✅ 뒤로가기 콜백
 ) {
     Log.d("UI", "ResultScreen received ${rec.places.size} places (topPicks=${rec.topPicks.size})")
     rec.places.forEachIndexed { i, p ->
@@ -358,6 +359,8 @@ fun ResultScreen(
         verticalArrangement = Arrangement.spacedBy(8.dp),
         contentPadding = PaddingValues(bottom = 16.dp)
     ) {
+
+
         // 날씨
         item(key = "weather") {
             WeatherBanner(rec.weather)
@@ -710,6 +713,19 @@ private fun PlaceRow(
 ) {
     val context = LocalContext.current
 
+    // reason = "요약 한 줄\nGPT 상세 설명..." 형태라서
+    // 첫 줄 / 두 번째 줄로 나눈다.
+    val (summaryLine, detailLine) = remember(reason) {
+        if (reason.isNullOrBlank()) {
+            "" to ""
+        } else {
+            val parts = reason.split('\n', limit = 2)
+            val summary = parts.getOrNull(0).orEmpty()
+            val detail = parts.getOrNull(1).orEmpty()
+            summary to detail
+        }
+    }
+
     ListItem(
         headlineContent = {
             Row(
@@ -727,11 +743,10 @@ private fun PlaceRow(
                 // 🔹 가게명 오른쪽 작은 "바로가기"
                 TextButton(
                     onClick = {
-                        val query = buildNaverQuery(p, regionHint)  // ✅ 지역 + 이름 + 주소
+                        val query = buildNaverQuery(p, regionHint)
                         val encoded = URLEncoder.encode(query, "UTF-8")
                         val url = "https://m.search.naver.com/search.naver?query=$encoded"
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        context.startActivity(intent)
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
                     },
                     colors = ButtonDefaults.textButtonColors(
                         contentColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.75f)
@@ -739,10 +754,7 @@ private fun PlaceRow(
                     contentPadding = PaddingValues(0.dp),
                     modifier = Modifier.height(28.dp)
                 ) {
-                    Text(
-                        "바로가기",
-                        style = MaterialTheme.typography.labelSmall
-                    )
+                    Text("바로가기", style = MaterialTheme.typography.labelSmall)
                 }
             }
         },
@@ -751,10 +763,22 @@ private fun PlaceRow(
                 if (!p.address.isNullOrBlank()) {
                     Text(p.address!!)
                 }
-                if (!reason.isNullOrBlank()) {
+
+                // 👉 1줄 요약
+                if (summaryLine.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        text = "추천 이유: $reason",
+                        text = "추천 이유: $summaryLine",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                // 👉 GPT가 써 준 자세한 설명 (항상 바로 아래에 표시)
+                if (detailLine.isNotBlank()) {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = detailLine,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -776,10 +800,7 @@ private fun PlaceRow(
                         modifier = Modifier.height(32.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        Text(
-                            "제거",
-                            fontSize = MaterialTheme.typography.labelMedium.fontSize
-                        )
+                        Text("제거", fontSize = MaterialTheme.typography.labelMedium.fontSize)
                     }
                 } else {
                     Button(
@@ -787,10 +808,7 @@ private fun PlaceRow(
                         modifier = Modifier.height(32.dp),
                         contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
                     ) {
-                        Text(
-                            "추가",
-                            fontSize = MaterialTheme.typography.labelMedium.fontSize
-                        )
+                        Text("추가", fontSize = MaterialTheme.typography.labelMedium.fontSize)
                     }
                 }
             }
@@ -798,6 +816,10 @@ private fun PlaceRow(
     )
     Divider()
 }
+
+
+
+
 
 /** 상단 TopPick 카드 */
 @Composable
@@ -808,6 +830,14 @@ private fun TopPickCard(
     onView: () -> Unit,
     onToggle: () -> Unit
 ) {
+
+    val rawReason = reason.orEmpty()
+    val reasonLines = rawReason.lines()
+    val summary = reasonLines.firstOrNull().orEmpty()
+    val detail = reasonLines.drop(1).joinToString("\n").trim()
+
+    var expanded by remember(p.id) { mutableStateOf(false) }
+
     Surface(
         tonalElevation = 1.dp,
         shape = MaterialTheme.shapes.medium,
@@ -840,15 +870,36 @@ private fun TopPickCard(
                 overflow = TextOverflow.Ellipsis
             )
 
-            if (!reason.isNullOrBlank()) {
+            if (summary.isNotBlank()) {
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = reason,
+                    text = "추천 이유: $summary",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
+            }
+
+            if (detail.isNotBlank()) {
+                Spacer(Modifier.height(2.dp))
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    contentPadding = PaddingValues(0.dp)
+                ) {
+                    Text(
+                        text = if (expanded) "접기" else "자세히",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
+
+                if (expanded) {
+                    Text(
+                        text = detail,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             Spacer(Modifier.height(8.dp))
             Row(
